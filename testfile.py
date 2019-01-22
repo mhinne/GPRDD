@@ -34,7 +34,7 @@ xlabels = class_label(x, k=100.0, theta=t)
 x1 = x[xlabels]
 x2 = x[~xlabels]
 
-noise_level = 2.5
+noise_level = 0.9
 
 mu1 = b0 + b1*x1
 mu2 = b0 + b1*x2
@@ -52,13 +52,14 @@ xpred = np.linspace(xmin, xmax, num=99)
 kfun = gp.gp_k_sq_exp
 
 
-for gap in np.linspace(0.0, 10.0, num=5):      
+for gap in np.linspace(0.0, 10.0, num=4):      
     y = y_raw + gap*xlabels
     
     ## Do everything for continuous model
     
     # GP object
     gp_cont = gp.GaussianProcess(x, y, kfun=kfun)    
+
 
     # log evidence 
     log_E_cont = gp_cont.evidence(method='importance_sampling', priors={'noise': gp.prior_gamma, 'length_scale': gp.prior_invgamma}, 
@@ -76,14 +77,14 @@ for gap in np.linspace(0.0, 10.0, num=5):
         
     # log evidence    
     log_E_disc = gp_disc.evidence(method='importance_sampling', priors=[{'noise': gp.prior_gamma, 
-                                     'length_scale': gp.prior_invgamma}, 
-                                    {'noise': gp.prior_gamma, 
-                                     'length_scale': gp.prior_invgamma}], 
-                                   hyperparameters=[{'noise': {'scale': 1.0, 'shape': 1.0}, 
-                                     'length_scale': {'scale': 1.0, 'shape': 1.0}}, 
-                                    {'noise': {'scale': 9.0, 'shape': 0.5}, 
-                                     'length_scale': {'scale': 1.0, 'shape': 1.0}}],
-                                   nmcmc=1000) 
+                                                     'length_scale': gp.prior_invgamma}, 
+                                                    {'noise': gp.prior_gamma, 
+                                                     'length_scale': gp.prior_invgamma}], 
+                                                   hyperparameters=[{'noise': {'scale': 1.0, 'shape': 1.0}, 
+                                                     'length_scale': {'scale': 1.0, 'shape': 1.0}}, 
+                                                    {'noise': {'scale': 9.0, 'shape': 0.5}, 
+                                                     'length_scale': {'scale': 1.0, 'shape': 1.0}}],
+                                                   nmcmc=1000) 
     
     # get & set optimal parameters according to grid search
     gp_disc_optpars = gp_disc.optimize_hyperparameters(kfun=kfun, method='grid_search')
@@ -104,7 +105,7 @@ for gap in np.linspace(0.0, 10.0, num=5):
         ax.scatter(x[~xlabels], y[~xlabels], marker='x', c='k')
         ax.scatter(x[xlabels], y[xlabels], marker='o', c='k')
         ax.axvline(x=t, color='k', linestyle='--')
-    f.suptitle('Log Bayes factor in favor of discontinuity (true gap = {:0.2f}) = {:0.2f}'.format(gap, log_E_disc - log_E_cont), fontsize=18)
+    f.suptitle('Log Bayes factor in favor of discontinuity = {:0.2f}'.format(log_E_disc - log_E_cont), fontsize=16)
     plt.show()
-#    f.savefig('GPRDD_{:0.0f}.svg'.format(gap), bbox_inches='tight')    
+    f.savefig('GPRDD_{:0.0f}.svg'.format(gap), bbox_inches='tight')    
         
