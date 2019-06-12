@@ -233,7 +233,7 @@ class GPRDDAnalysis():
     def plot(self, x_test):
         
         if self.ndim == 1:
-            fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(12,6), sharex=True, sharey=True)
+            fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(14,6), sharex=True, sharey=True)
             lab1 = self.labelFunc(self.x)
             lab2 = np.logical_not(lab1)
             ax1.plot(self.x[lab1], self.y[lab1], linestyle='', marker='o', color='k')
@@ -252,7 +252,7 @@ class GPRDDAnalysis():
             ax2.set_ylabel('y')            
             fig.suptitle(r'GP RDD analysis, log BF10 = {:0.4f}'.format(self.logBayesFactor()))
         elif self.ndim == 2:
-            fig = plt.figure(figsize=plt.figaspect(0.5))
+            fig = plt.figure(figsize=(14,6))
             
             ax = fig.add_subplot(1, 2, 1, projection='3d')
             lab1 = self.labelFunc(self.x)
