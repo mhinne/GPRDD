@@ -21,18 +21,31 @@ print("GPRDD version:    {}".format(GPRDDAnalysis.__version__))
    
 
 #
-def generate_data(n, labelFunc, snr=1.0):    
+def generate_data_1D_disc(n, labelFunc, gap=1.0):    
     xmin    = -1.5
     xmax    = 1.5
     x       = np.linspace(xmin, xmax, num=n)    
-    noise   = np.random.normal(size=n)    
-    gap     = snr
+    noise   = np.random.normal(size=n)   
     
     b0, b1, b2 = (5, 1.2, 0.0)
     y = b0 + b1*x + b2*np.sin(x) + noise
     
     labels                      = labelFunc(x)
     y[labels] += gap
+    
+    return x, y, labels
+#
+def generate_data_1D_diffslope(n, labelFunc, slopeRatio=2.0):    
+    xmin    = -1.5
+    xmax    = 1.5
+    x       = np.linspace(xmin, xmax, num=n)    
+    noise   = np.random.normal(size=n)   
+    
+    b0, b1= (5, 1.2)
+    y = b0 + b1*x[labelFunc(x)] + b1*slopeRatio*x[np.logical_not(labelFunc(x))] + noise
+    
+    labels                      = labelFunc(x)
+#    y[labels] += gap
     
     return x, y, labels
 #
@@ -53,13 +66,16 @@ elif kerneltype == 'RBF':
     kernel = GPy.kern.RBF(1) + GPy.kern.White(1)
 
 
-snr = 3.0
 labelFunc = lambda x: x > 0
 
-x, y, _ = generate_data(25, labelFunc, snr=snr)      
+x, y, _ = generate_data_1D_disc(25, labelFunc, gap=1.0)      
+
+gprdd = GPRDDAnalysis.GPRDDAnalysis(x, y, kernel, labelFunc)
+gprdd.train()
+gprdd.plot(x_test)
 
 
-
+x, y, _ = generate_data_1D_diffslope(25, labelFunc, slopeRatio=2.0)      
 
 gprdd = GPRDDAnalysis.GPRDDAnalysis(x, y, kernel, labelFunc)
 gprdd.train()
@@ -67,8 +83,3 @@ gprdd.plot(x_test)
 
 
 
-#gprdd_analysis = GPRDD2D.GPRDDAnalysis(x, y, kernel, threshold=0.0)
-#gprdd_analysis.run()
-#
-#                   
-#gprdd_analysis.visualize(x_test, true_gap=snr)
