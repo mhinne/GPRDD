@@ -41,11 +41,10 @@ def generate_data_1D_diffslope(n, labelFunc, slopeRatio=2.0):
     x       = np.linspace(xmin, xmax, num=n)    
     noise   = np.random.normal(size=n)   
     
-    b0, b1= (5, 1.2)
-    y = b0 + b1*x[labelFunc(x)] + b1*slopeRatio*x[np.logical_not(labelFunc(x))] + noise
+    b0, b1= (5, 1.7)
+    y = b0 + b1*x*np.logical_not(labelFunc(x)) + b1*slopeRatio*x*labelFunc(x) + noise
     
-    labels                      = labelFunc(x)
-#    y[labels] += gap
+    labels = labelFunc(x)
     
     return x, y, labels
 #
@@ -54,7 +53,7 @@ def generate_data_1D_diffslope(n, labelFunc, slopeRatio=2.0):
 x_test = np.linspace(-1.5, 1.5, num=100)  
 
 
-kerneltype = 'Matern32'
+kerneltype = 'Linear'
 
 if kerneltype == 'Matern32':
     kernel = GPy.kern.Matern32(1) + GPy.kern.White(1)
@@ -75,7 +74,7 @@ gprdd.train()
 gprdd.plot(x_test)
 
 
-x, y, _ = generate_data_1D_diffslope(25, labelFunc, slopeRatio=2.0)      
+x, y, _ = generate_data_1D_diffslope(25, labelFunc, slopeRatio=4.0)      
 
 gprdd = GPRDDAnalysis.GPRDDAnalysis(x, y, kernel, labelFunc)
 gprdd.train()
