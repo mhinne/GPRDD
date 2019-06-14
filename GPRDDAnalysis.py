@@ -17,9 +17,8 @@ rc('font',size=12)
 rc('font',family='serif')
 rc('axes',labelsize=10)
 
-__version__ = "0.0.3"
+__version__ = "0.0.5"
 
-# TODO: effect size estimation by evaluation at boundary
 
 class ContinuousModel():
     
@@ -36,7 +35,7 @@ class ContinuousModel():
     
     def train(self, num_restarts=10, verbose=False):
         # We optimize with some restarts to avoid local minima
-        self.m.optimize_restarts(num_restarts=10, verbose=verbose)
+        self.m.optimize_restarts(num_restarts=num_restarts, verbose=verbose)
         self.isOptimized = True
     #
     
@@ -44,6 +43,7 @@ class ContinuousModel():
         if len(x_test.shape) == 1:
             x_test = np.atleast_2d(x_test).T
         return self.m.predict(x_test, kern=self.m.kern.copy())
+#        return self.m.predict(x_test, kern=self.kernel)
     #
     def BIC(self):
         if not self.isOptimized:
@@ -86,7 +86,7 @@ class ContinuousModel():
             axis.zaxis.pane.fill = False
         else:
             raise('Dimensionality not implemented')
-                
+#               
     
     
 class DiscontinuousModel():
@@ -122,9 +122,9 @@ class DiscontinuousModel():
         self.BICscore = None
     #
     
-    def train(self):
+    def train(self, num_restarts):
         for model in self.models:
-            model.train()
+            model.train(num_restarts=num_restarts)
         self.isOptimized = True        
     #
     
@@ -150,7 +150,7 @@ class DiscontinuousModel():
         return self.BICscore
     #
     
-    def plot(self, x_test, axis=None, colors=None, b=0.0):
+    def plot(self, x_test, axis=None, colors=None, b=0.0, plotEffectSize=False):
         if axis is None:
             axis = plt.gca()
         if colors is None:
@@ -165,10 +165,13 @@ class DiscontinuousModel():
             self.models[0].plot(x1, axis=axis, color=colors[0])
             self.models[1].plot(x2, axis=axis, color=colors[1])
             m0b, v0b = self.models[0].predict(np.array([b]))
+            
             m1b, v1b = self.models[1].predict(np.array([b]))
-            axis.plot([b,b], [np.squeeze(m0b), np.squeeze(m1b)], c='k', linestyle='-', marker=None, linewidth=2.0)
-            axis.plot(b, m0b, c='k', marker='o', markeredgecolor='k', markerfacecolor='lightgrey', ms=10)
-            axis.plot(b, m1b, c='k', marker='o', markeredgecolor='k', markerfacecolor='lightgrey', ms=10)
+            
+            if plotEffectSize:
+                axis.plot([b,b], [np.squeeze(m0b), np.squeeze(m1b)], c='k', linestyle='-', marker=None, linewidth=2.0)
+                axis.plot(b, m0b, c='k', marker='o', markeredgecolor='k', markerfacecolor='lightgrey', ms=10)
+                axis.plot(b, m1b, c='k', marker='o', markeredgecolor='k', markerfacecolor='lightgrey', ms=10)
             
             return (m0b, v0b), (m1b, v1b)
             
@@ -201,8 +204,8 @@ class DiscontinuousModel():
             axis.zaxis.pane.fill = False
         else:
             raise('Dimensionality not implemented')
-
-
+#
+            
 class GPRDDAnalysis():
     
     isOptimized = False
@@ -223,9 +226,9 @@ class GPRDDAnalysis():
         self.DModel = DiscontinuousModel(x, y, kernel, labelFunc)
     #
     
-    def train(self):
-        self.CModel.train()
-        self.DModel.train()
+    def train(self, num_restarts=10):
+        self.CModel.train(num_restarts=num_restarts)
+        self.DModel.train(num_restarts=num_restarts)
         self.isOptimized = True
     #    
         
@@ -242,6 +245,19 @@ class GPRDDAnalysis():
             self.log_BF_10 = BIC_cont - BIC_disc 
         return self.log_BF_10
     #
+    def discPval(self, b=0.0):
+#        print(self.DModel.models[0].m)
+        m0b, v0b = self.DModel.models[0].predict(np.array([b]))
+        m1b, v1b = self.DModel.models[1].predict(np.array([b]))
+        d_mean_D = np.squeeze(m0b - m1b)
+        d_var_D = np.squeeze(v0b + v1b)
+        d_std_D = np.sqrt(d_var_D)
+        
+        if d_mean_D < 0:
+            pval = 1 - stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
+        else:
+            pval = stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
+        return pval
     
     def plot(self, x_test, b=0.0, plotEffectSize=False):
         
@@ -251,54 +267,82 @@ class GPRDDAnalysis():
         pmc = lc / (lc+ld)
         pmd = 1 - pmc
         
+        LBF = self.logBayesFactor()
+                
         if self.ndim == 1:
             if plotEffectSize:
-                fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, figsize=(15,6))
+                fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, figsize=(16,6))
             else:
-                fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(15,6), sharex=True, sharey=True)
+                fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(16,6), sharex=True, sharey=True)
             lab1 = self.labelFunc(self.x)
             lab2 = np.logical_not(lab1)
             ax1.plot(self.x[lab1], self.y[lab1], linestyle='', marker='o', color='k')
             ax1.plot(self.x[lab2], self.y[lab2], linestyle='', marker='x', color='k')
             self.CModel.plot(x_test, ax1)
-            ax1.axvline(x = 0, color='black', linestyle=':')
-            ax1.set_title('Continuous model, p(M|x) = {:0.2f}'.format(pmc))
+            ax1.axvline(x = b, color='black', linestyle=':')
+            ax1.set_title(r'Continuous model, $p(M_C \mid x)$ = {:0.2f}'.format(pmc))
             ax1.set_xlabel('x')
             ax1.set_ylabel('y')
+            ax1.set_xlim([self.x[0], self.x[-1]])
+            
             ax2.plot(self.x[lab1], self.y[lab1], linestyle='', marker='o', color='k')
             ax2.plot(self.x[lab2], self.y[lab2], linestyle='', marker='x', color='k')
-            ax2.axvline(x = 0, color='black', linestyle=':')
-            m0stats, m1stats = self.DModel.plot(x_test, ax2, colors=('firebrick', 'firebrick'), b=b)            
-            ax2.set_title('Discontinuous model, p(M|x) = {:0.2f}'.format(pmd))
+            ax2.axvline(x = b, color='black', linestyle=':')
+            m0stats, m1stats = self.DModel.plot(x_test, ax2, colors=('firebrick', 'firebrick'), b=b, plotEffectSize=plotEffectSize)            
+            ax2.set_title(r'Discontinuous model, $p(M_D \mid x)$ = {:0.2f}'.format(pmd))
             ax2.set_xlabel('x')
             ax2.set_ylabel('y')    
+            ax2.set_xlim([self.x[0], self.x[-1]])
             
-            if plotEffectSize:            
+            if LBF < 0.0: # continuous model is favored
+                winax = ax1
+            else:
+                winax = ax2
+            for axis in ['top','bottom','left','right']:
+                winax.spines[axis].set_linewidth(2.0)
+            
+            if plotEffectSize:  
+                # create ES plot
                 d_mean_D = np.squeeze(m0stats[0] - m1stats[0])
                 d_var_D = np.squeeze(m0stats[1] + m1stats[1])
+                d_std_D = np.sqrt(d_var_D)
                 
-                xmin = d_mean_D - 2*d_var_D
-                xmax = d_mean_D + 2*d_var_D
+                if d_mean_D < 0:
+                    pval = 1 - stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
+                else:
+                    pval = stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
+                
+                xmin = np.min([d_mean_D - 2*d_std_D, -0.1*d_std_D])
+                xmax = np.max([d_mean_D + 2*d_std_D, 0.1*d_std_D])
+                
                 n = 100
                 xrange = np.linspace(xmin, xmax, n)
-                y = stats.norm.pdf(xrange, d_mean_D, np.sqrt(d_var_D))   
-                # see https://www.asc.ohio-state.edu/lee.2272/882/882group4.pdf
+                y = stats.norm.pdf(xrange, d_mean_D, d_std_D)   
                 
-                d_bma_mean = pmd*d_mean_D #+pmc*0.0
-                d_bma_var = (d_var_D + d_mean_D**2)*pmd - d_bma_mean**2
+                nmc = 20000
+                samples = np.zeros((nmc))
+                nspike = int(np.round(pmc*nmc))
+                samples[nspike:] = np.random.normal(loc=d_mean_D, scale=np.sqrt(d_var_D), size=(nmc-nspike))
                 
-                y_bma = stats.norm.pdf(xrange, d_bma_mean, np.sqrt(d_bma_var))
-                
-                ax3.plot(xrange, y, c='firebrick', label=r'Discontinuous model', linewidth=2.0, linestyle='--')
+                kde_fit = stats.gaussian_kde(samples, bw_method='silverman')
+                d_bma = kde_fit(xrange)
+                ax3.plot(xrange, y, c='firebrick', label=r'$M_D$', linewidth=2.0, linestyle='--')
                 ax3.fill_between(xrange, y, np.zeros((n)), alpha=0.1, color='firebrick')
-                ax3.axvline(x=b, linewidth=2.0, label=r'Continuous model', color='darkgreen', linestyle='--')
-                ax3.plot(xrange, y_bma, c='k', label=r'Bayesian model average', linewidth=2.0)
-                ax3.fill_between(xrange, y_bma, np.zeros((n)), alpha=0.1, color='k')
-                ax3.legend(loc='lower center')
+                ax3.axvline(x=0, linewidth=2.0, label=r'$M_C$', color='darkgreen', linestyle='--')
+                ax3.plot(xrange, d_bma, c='k', label=r'BMA', linewidth=2.0)
+                ax3.fill_between(xrange, d_bma, np.zeros((n)), alpha=0.1, color='k')
+                ax3.legend(loc='upper right')
                 ax3.set_xlabel(r'$\delta$')
                 ax3.set_ylabel('Density')
+                ax3.set_title(r'Size of discontinuity ($p$ = {:0.3f})'.format(pval))
+                ax3.set_ylim(bottom=0)
+                ax3.set_xlim([xmin, xmax])
             
-            fig.suptitle(r'GP RDD analysis, log BF10 = {:0.4f}'.format(self.logBayesFactor()))
+            fig.suptitle(r'GP RDD analysis, log BF10 = {:0.4f}'.format(LBF))
+            if plotEffectSize:
+                return fig, (ax1, ax2, ax3)
+            else:
+                return fig, (ax1, ax2)
         elif self.ndim == 2:
             fig = plt.figure(figsize=(14,6))
             
@@ -321,7 +365,7 @@ class GPRDDAnalysis():
             ax.set_zlabel('y')
             self.DModel.plot(x_test, ax, colors=('firebrick', 'coral'))
             ax.set_title('Continuous model, p(M|x) = {:0.2f}'.format(pmd))
-            fig.suptitle('GP RDD analysis, log BF10 = {:0.4f}'.format(self.logBayesFactor()))
+            fig.suptitle('GP RDD analysis, log BF10 = {:0.4f}'.format(LBF))
         else:
             raise('Dimensionality not implemented')
                 
