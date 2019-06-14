@@ -370,7 +370,22 @@ class GPRDDAnalysis():
             raise('Dimensionality not implemented')
                 
         
-    
+def get_kernel(kerneltype, D):
+
+    if kerneltype == 'Matern32':
+        kernel = GPy.kern.Matern32(D) + GPy.kern.White(D)
+    elif kerneltype == 'Linear':
+        kernel = GPy.kern.Linear(D) + GPy.kern.Bias(D) + GPy.kern.White(D)
+    elif kerneltype in ('ttest', 'Constant'):
+        kernel = GPy.kern.Bias(D) + GPy.kern.White(D)
+    elif kerneltype == 'RBF':
+        kernel = GPy.kern.RBF(D) + GPy.kern.White(D)
+    elif kerneltype == 'Periodic':
+        kernel = GPy.kern.PeriodicMatern32(D) + GPy.kern.Linear(D) + GPy.kern.White(D) #+ GPy.kern.Bias(D)?
+    else:
+        raise('Unsupported kernel type')
+    return kernel.copy()
+#
 
         
     
