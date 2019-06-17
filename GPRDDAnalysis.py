@@ -169,7 +169,7 @@ class DiscontinuousModel():
             m1b, v1b = self.models[1].predict(np.array([b]))
             
             if plotEffectSize:
-                axis.plot([b,b], [np.squeeze(m0b), np.squeeze(m1b)], c='k', linestyle='-', marker=None, linewidth=2.0)
+                axis.plot([b,b], [np.squeeze(m0b), np.squeeze(m1b)], c='k', linestyle='-', marker=None, linewidth=3.0)
                 axis.plot(b, m0b, c='k', marker='o', markeredgecolor='k', markerfacecolor='lightgrey', ms=10)
                 axis.plot(b, m1b, c='k', marker='o', markeredgecolor='k', markerfacecolor='lightgrey', ms=10)
             
@@ -258,14 +258,25 @@ class GPRDDAnalysis():
         else:
             pval = stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
         return pval
-    
-    def plot(self, x_test, b=0.0, plotEffectSize=False):
-        
+    #
+    def discEstimate(self, b=0.0):
+        m0b, v0b = self.DModel.models[0].predict(np.array([b]))
+        m1b, v1b = self.DModel.models[1].predict(np.array([b]))
+        return (m0b, m1b), (v0b, v1b)
+    #
+    def pmp(self):
         lc = np.exp(-1.0*self.CModel.BIC()/2)
         ld = np.exp(-1.0*self.DModel.BIC()/2)
         # assuming uniform model prior
         pmc = lc / (lc+ld)
         pmd = 1 - pmc
+        return pmc, pmd
+    #
+    
+    def plot(self, x_test, b=0.0, plotEffectSize=False):
+        
+        
+        pmc, pmd = self.pmp()
         
         LBF = self.logBayesFactor()
                 
@@ -299,7 +310,7 @@ class GPRDDAnalysis():
             else:
                 winax = ax2
             for axis in ['top','bottom','left','right']:
-                winax.spines[axis].set_linewidth(2.0)
+                winax.spines[axis].set_linewidth(3.0)
             
             if plotEffectSize:  
                 # create ES plot
@@ -331,7 +342,7 @@ class GPRDDAnalysis():
                 ax3.axvline(x=0, linewidth=2.0, label=r'$M_C$', color='darkgreen', linestyle='--')
                 ax3.plot(xrange, d_bma, c='k', label=r'BMA', linewidth=2.0)
                 ax3.fill_between(xrange, d_bma, np.zeros((n)), alpha=0.1, color='k')
-                ax3.legend(loc='upper right')
+                ax3.legend(loc='best')
                 ax3.set_xlabel(r'$\delta$')
                 ax3.set_ylabel('Density')
                 ax3.set_title(r'Size of discontinuity ($p$ = {:0.3f})'.format(pval))
