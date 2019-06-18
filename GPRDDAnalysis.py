@@ -17,7 +17,7 @@ rc('font',size=12)
 rc('font',family='serif')
 rc('axes',labelsize=10)
 
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 
 
 class ContinuousModel():
@@ -57,6 +57,8 @@ class ContinuousModel():
             self.BICscore = BIC
         return self.BICscore
     #
+    def logEvidence(self):
+        return -1.0*self.BIC()/2
     
     def plot(self, x_test, axis=None, color=None):
         if axis is None:
@@ -149,6 +151,8 @@ class DiscontinuousModel():
             self.BICscore = BIC
         return self.BICscore
     #
+    def logEvidence(self):
+        return -1.0*self.BIC()/2
     
     def plot(self, x_test, axis=None, colors=None, b=0.0, plotEffectSize=False):
         if axis is None:
@@ -239,14 +243,11 @@ class GPRDDAnalysis():
     def logBayesFactor(self):
         if not self.isOptimized:
             self.train()      
-        if self.log_BF_10 is None:
-            BIC_cont = self.CModel.BIC()   
-            BIC_disc = self.DModel.BIC()        
-            self.log_BF_10 = BIC_cont - BIC_disc 
+        if self.log_BF_10 is None:      
+            self.log_BF_10 = self.DModel.logEvidence() - self.CModel.logEvidence()
         return self.log_BF_10
     #
     def discPval(self, b=0.0):
-#        print(self.DModel.models[0].m)
         m0b, v0b = self.DModel.models[0].predict(np.array([b]))
         m1b, v1b = self.DModel.models[1].predict(np.array([b]))
         d_mean_D = np.squeeze(m0b - m1b)
@@ -265,11 +266,9 @@ class GPRDDAnalysis():
         return (m0b, m1b), (v0b, v1b)
     #
     def pmp(self):
-        lc = np.exp(-1.0*self.CModel.BIC()/2)
-        ld = np.exp(-1.0*self.DModel.BIC()/2)
-        # assuming uniform model prior
-        pmc = lc / (lc+ld)
-        pmd = 1 - pmc
+        bf = np.exp(self.logBayesFactor())
+        pmd = bf / (1+bf)
+        pmc = 1 - pmd
         return pmc, pmd
     #
     
