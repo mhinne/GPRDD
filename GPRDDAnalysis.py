@@ -17,23 +17,45 @@ rc('font',size=12)
 rc('font',family='serif')
 rc('axes',labelsize=10)
 
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 
 
-class ContinuousModel():
+
+# Superclass only used as abstract class
+class GPRegressionModel():
+        
+    def __init__self(x, y, kernel, lik=GPy.likelihoods.Gaussian()):
+        raise NotImplementedError
+    
+    def train(self, num_restarts=10, verbose=False):
+        raise NotImplementedError
+        
+    def predict(self, x_test):
+        raise NotImplementedError
+        
+    def get_log_marginal_likelihood(self, mode='BIC'):
+        raise NotImplementedError
+        
+    def plot(self, x_test, axis=None, color=None):
+        raise NotImplementedError
+
+class ContinuousModel(GPRegressionModel):
     
     isOptimized = False
-    def __init__(self, x, y, kernel):
+    def __init__(self, x, y, kernel, lik=GPy.likelihoods.Gaussian()):
         self.x = x
         self.y = y
         self.n = x.shape[0]
-        self.kernel = kernel.copy()
-        self.m = GPy.models.GPRegression(x, y, self.kernel) 
+        self.kernel = kernel.copy()        
+        self.m = GPy.core.GP(X = x, Y = y, kernel = self.kernel, likelihood = lik)
         self.ndim = np.ndim(x)
         self.BICscore = None
     #
     
     def train(self, num_restarts=10, verbose=False):
+        # Optimizes according to likelihood and gradient, and priors if specified
+        # Optimizing is done via e.g. SGD, BFGS, etc. Note that this is different from the inference method
+        
         # We optimize with some restarts to avoid local minima
         self.m.optimize_restarts(num_restarts=num_restarts, verbose=verbose)
         self.isOptimized = True
@@ -43,22 +65,25 @@ class ContinuousModel():
         if len(x_test.shape) == 1:
             x_test = np.atleast_2d(x_test).T
         return self.m.predict(x_test, kern=self.m.kern.copy())
-#        return self.m.predict(x_test, kern=self.kernel)
     #
-    def BIC(self):
-        if not self.isOptimized:
-            print('Parameters have not been optimized')
-            self.train()
-        
-        if self.BICscore is None:
-            k = self.m.num_params
-            L = self.m.log_likelihood()
-            BIC = np.log(self.n)*k - 2*L
-            self.BICscore = BIC
-        return self.BICscore
-    #
-    def logEvidence(self):
-        return -1.0*self.BIC()/2
+    def get_log_marginal_likelihood(self, mode='BIC'):
+        if mode is 'BIC':
+            if not self.isOptimized:
+                print('Parameters have not been optimized')
+                self.train()
+            
+            if self.BICscore is None:
+                k = self.m.num_params
+                L = self.m.log_likelihood()
+                BIC = L - k/2*np.log(self.n)
+                self.BICscore = BIC
+            return self.BICscore
+        elif mode in ['laplace', 'Laplace']:
+            raise NotImplementedError('Laplace approximation is not yet implemented')
+        elif mode is 'AIS':
+            raise NotImplementedError('Annealed importance sampling is not yet implemented')
+        else:
+            raise NotImplementedError('Unrecognized marginal likelihood approximation {:s}'.format(mode))
     
     def plot(self, x_test, axis=None, color=None):
         if axis is None:
@@ -94,7 +119,7 @@ class ContinuousModel():
 class DiscontinuousModel():
     
     isOptimized = False
-    def __init__(self, x, y, kernel, labelFunc):
+    def __init__(self, x, y, kernel, labelFunc, lik=GPy.likelihoods.Gaussian()):
         
         self.ndim = np.ndim(x)
         if self.ndim==2 and x.shape[1]==1:
@@ -119,8 +144,8 @@ class DiscontinuousModel():
             y2 = np.expand_dims(y2, axis=1)
             
         self.models = list()
-        self.models.append(ContinuousModel(x1, y1, kernel))
-        self.models.append(ContinuousModel(x2, y2, kernel))
+        self.models.append(ContinuousModel(x1, y1, kernel, lik=lik))
+        self.models.append(ContinuousModel(x2, y2, kernel, lik=lik))
         self.BICscore = None
     #
     
@@ -137,22 +162,26 @@ class DiscontinuousModel():
         x2 = np.expand_dims(x_test[lab2,], axis=1)
         return self.models[0].predict(x1), self.models[1].predict(x2)
     #
-    def BIC(self):
-        if not self.isOptimized:
-            print('Parameters have not been optimized')
-            self.train()
-        if self.BICscore is None:
-            BIC = 0
-            for i, model in enumerate(self.models):
-                n = model.n
-                k = model.m.num_params
-                L = model.m.log_likelihood()
-                BIC += np.log(n)*k - 2*L
+    def get_log_marginal_likelihood(self, mode='BIC'):
+        if mode is 'BIC':
+            if not self.isOptimized:
+                print('Parameters have not been optimized')
+                self.train()
+            if self.BICscore is None:
+                BIC = 0
+                for i, model in enumerate(self.models):
+                    n = model.n
+                    k = model.m.num_params
+                    L = model.m.log_likelihood()
+                    BIC += L - k/2*np.log(n)
             self.BICscore = BIC
-        return self.BICscore
-    #
-    def logEvidence(self):
-        return -1.0*self.BIC()/2
+            return self.BICscore
+        elif mode in ['laplace', 'Laplace']:
+            raise NotImplementedError('Laplace approximation is not yet implemented')
+        elif mode is 'AIS':
+            raise NotImplementedError('Annealed importance sampling is not yet implemented')
+        else:
+            raise NotImplementedError('Unrecognized marginal likelihood approximation {:s}'.format(mode))
     
     def plot(self, x_test, axis=None, colors=None, b=0.0, plotEffectSize=False):
         if axis is None:
@@ -240,11 +269,11 @@ class GPRDDAnalysis():
         return self.CModel.predict(x_test), self.DModel.predict(x_test)
     #
     
-    def logBayesFactor(self):
+    def get_log_Bayes_factor(self, mode='BIC'):
         if not self.isOptimized:
             self.train()      
         if self.log_BF_10 is None:      
-            self.log_BF_10 = self.DModel.logEvidence() - self.CModel.logEvidence()
+            self.log_BF_10 = self.DModel.get_log_marginal_likelihood(mode=mode) - self.CModel.get_log_marginal_likelihood(mode=mode)
         return self.log_BF_10
     #
     def discPval(self, b=0.0):
@@ -265,19 +294,18 @@ class GPRDDAnalysis():
         m1b, v1b = self.DModel.models[1].predict(np.array([b]))
         return (m0b, m1b), (v0b, v1b)
     #
-    def pmp(self):
-        bf = np.exp(self.logBayesFactor())
+    def get_posterior_model_probabilities(self, mode='BIC'):
+        bf = np.exp(self.get_log_Bayes_factor(mode))
         pmd = bf / (1+bf)
         pmc = 1 - pmd
         return pmc, pmd
     #
     
-    def plot(self, x_test, b=0.0, plotEffectSize=False):
+    def plot(self, x_test, b=0.0, plotEffectSize=False, mode='BIC'):       
         
+        pmc, pmd = self.get_posterior_model_probabilities(mode)
         
-        pmc, pmd = self.pmp()
-        
-        LBF = self.logBayesFactor()
+        LBF = self.get_log_Bayes_factor(mode)
                 
         if self.ndim == 1:
             if plotEffectSize:
@@ -356,29 +384,32 @@ class GPRDDAnalysis():
         elif self.ndim == 2:
             fig = plt.figure(figsize=(14,6))
             
-            ax = fig.add_subplot(1, 2, 1, projection='3d')
+            ax1 = fig.add_subplot(1, 2, 1, projection='3d')
             lab1 = self.labelFunc(self.x)
             lab2 = np.logical_not(lab1)
-            ax.scatter(self.x[lab1,0], self.x[lab1,1], self.y[lab1,], marker='o', c='black')
-            ax.scatter(self.x[lab2,0], self.x[lab2,1], self.y[lab2,], marker='x', c='black')
-            self.CModel.plot(x_test, ax)
-            ax.set_title('Continuous model, p(M|x) = {:0.2f}'.format(pmc))
-            ax.set_xlabel(r'$x_1$')
-            ax.set_ylabel(r'$x_2$')
-            ax.set_zlabel('y')
+            ax1.scatter(self.x[lab1,0], self.x[lab1,1], self.y[lab1,], marker='o', c='black')
+            ax1.scatter(self.x[lab2,0], self.x[lab2,1], self.y[lab2,], marker='x', c='black')
+            self.CModel.plot(x_test, ax1)
+            ax1.set_title('Continuous model, p(M|x) = {:0.2f}'.format(pmc))
+            ax1.set_xlabel(r'$x_1$')
+            ax1.set_ylabel(r'$x_2$')
+            ax1.set_zlabel('y')
             
-            ax = fig.add_subplot(1, 2, 2, projection='3d')
-            ax.scatter(self.x[lab1,0], self.x[lab1,1], self.y[lab1,], marker='o', c='black')
-            ax.scatter(self.x[lab2,0], self.x[lab2,1], self.y[lab2,], marker='x', c='black')
-            ax.set_xlabel(r'$x_1$')
-            ax.set_ylabel(r'$x_2$')
-            ax.set_zlabel('y')
-            self.DModel.plot(x_test, ax, colors=('firebrick', 'coral'))
-            ax.set_title('Continuous model, p(M|x) = {:0.2f}'.format(pmd))
+            ax2 = fig.add_subplot(1, 2, 2, projection='3d')
+            ax2.scatter(self.x[lab1,0], self.x[lab1,1], self.y[lab1,], marker='o', c='black')
+            ax2.scatter(self.x[lab2,0], self.x[lab2,1], self.y[lab2,], marker='x', c='black')
+            ax2.set_xlabel(r'$x_1$')
+            ax2.set_ylabel(r'$x_2$')
+            ax2.set_zlabel('y')
+            self.DModel.plot(x_test, ax2, colors=('firebrick', 'coral'))
+            ax2.set_title('Continuous model, p(M|x) = {:0.2f}'.format(pmd))
             fig.suptitle('GP RDD analysis, log BF10 = {:0.4f}'.format(LBF))
+            return fig, (ax1, ax2)
         else:
             raise('Dimensionality not implemented')
                 
+
+# TODO: add hyperparameter priors in a generic way to each kernel
         
 def get_kernel(kerneltype, D):
 
