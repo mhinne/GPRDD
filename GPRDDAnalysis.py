@@ -17,7 +17,7 @@ rc('font',size=12)
 rc('font',family='serif')
 rc('axes',labelsize=10)
 
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 
 
 
@@ -243,6 +243,7 @@ class GPRDDAnalysis():
     
     isOptimized = False
     log_BF_10 = None
+    summary_object = None
     def __init__(self, x, y, kernel, labelFunc):
         self.x = x
         self.y = y
@@ -301,11 +302,57 @@ class GPRDDAnalysis():
         return pmc, pmd
     #
     
-    def plot(self, x_test, b=0.0, plotEffectSize=False, mode='BIC'):       
+    def summary(self, mode='BIC', b=0.0):
+        if self.summary_object is None:
+            summ = dict()
+            summ['logbayesfactor'] = self.get_log_Bayes_factor(mode)
+            pmc, pmd = self.get_posterior_model_probabilities(mode)
+            summ['pmp'] = {'pmc': pmc, 'pmd': pmd}
+            
+            # compute effect size            
+            m0b, v0b = self.DModel.models[0].predict(np.array([b]))            
+            m1b, v1b = self.DModel.models[1].predict(np.array([b]))
+                        
+            d_mean_D = np.squeeze(m0b - m1b)
+            d_var_D = np.squeeze(v0b + v1b)
+            d_std_D = np.sqrt(d_var_D)
+            
+            if d_mean_D < 0:
+                pval = 1 - stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
+            else:
+                pval = stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
+            
+            xmin, xmax = np.min([d_mean_D - 2*d_std_D, -0.1*d_std_D]), np.max([d_mean_D + 2*d_std_D, 0.1*d_std_D])
+            
+            n = 100
+            xrange = np.linspace(xmin, xmax, n)
+            y = stats.norm.pdf(xrange, d_mean_D, d_std_D)   
+            
+            nmc = 20000
+            samples = np.zeros((nmc))
+            nspike = int(np.round(pmc*nmc))
+            samples[nspike:] = np.random.normal(loc=d_mean_D, scale=np.sqrt(d_var_D), size=(nmc-nspike))
+            if nspike==nmc:
+                d_bma = np.zeros((nspike))
+            else:
+                kde_fit = stats.gaussian_kde(samples, bw_method='silverman')
+                d_bma = kde_fit(xrange)
+            summ['es_BMA'] = d_bma
+            summ['es_Disc'] = y
+            summ['pval'] = pval
+            summ['es_interval'] = (xmin, xmax)
+            summ['f(b)'] = (m0b, m1b)
+            self.summary_object = summ
+        return self.summary_object
+    
+    #
+    def plot(self, x_test, b=0.0, plotEffectSize=False, mode='BIC'):   
         
-        pmc, pmd = self.get_posterior_model_probabilities(mode)
+        summary = self.summary(mode=mode, b=b)
         
-        LBF = self.get_log_Bayes_factor(mode)
+        pmc, pmd = summary['pmp']['pmc'], summary['pmp']['pmd']
+        
+        LBF = summary['logbayesfactor']
                 
         if self.ndim == 1:
             if plotEffectSize:
@@ -340,30 +387,16 @@ class GPRDDAnalysis():
                 winax.spines[axis].set_linewidth(3.0)
             
             if plotEffectSize:  
-                # create ES plot
-                d_mean_D = np.squeeze(m0stats[0] - m1stats[0])
-                d_var_D = np.squeeze(m0stats[1] + m1stats[1])
-                d_std_D = np.sqrt(d_var_D)
-                
-                if d_mean_D < 0:
-                    pval = 1 - stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
-                else:
-                    pval = stats.norm.cdf(x=0, loc=d_mean_D, scale=d_std_D)
-                
-                xmin = np.min([d_mean_D - 2*d_std_D, -0.1*d_std_D])
-                xmax = np.max([d_mean_D + 2*d_std_D, 0.1*d_std_D])
+                # create ES plot                
+                xmin, xmax = summary['es_interval']
                 
                 n = 100
                 xrange = np.linspace(xmin, xmax, n)
-                y = stats.norm.pdf(xrange, d_mean_D, d_std_D)   
+                y = summary['es_Disc']
                 
-                nmc = 20000
-                samples = np.zeros((nmc))
-                nspike = int(np.round(pmc*nmc))
-                samples[nspike:] = np.random.normal(loc=d_mean_D, scale=np.sqrt(d_var_D), size=(nmc-nspike))
                 
-                kde_fit = stats.gaussian_kde(samples, bw_method='silverman')
-                d_bma = kde_fit(xrange)
+                pval = summary['pval']
+                d_bma = summary['es_BMA']
                 ax3.plot(xrange, y, c='firebrick', label=r'$M_D$', linewidth=2.0, linestyle='--')
                 ax3.fill_between(xrange, y, np.zeros((n)), alpha=0.1, color='firebrick')
                 ax3.axvline(x=0, linewidth=2.0, label=r'$M_C$', color='darkgreen', linestyle='--')
