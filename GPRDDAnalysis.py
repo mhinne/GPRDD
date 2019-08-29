@@ -244,7 +244,8 @@ class GPRDDAnalysis():
     isOptimized = False
     log_BF_10 = None
     summary_object = None
-    def __init__(self, x, y, kernel, labelFunc):
+    BFmode = 'BIC'
+    def __init__(self, x, y, kernel, labelFunc, mode='BIC'):
         self.x = x
         self.y = y
         self.ndim = np.ndim(x)
@@ -258,6 +259,7 @@ class GPRDDAnalysis():
         
         self.CModel = ContinuousModel(x, y, kernel)
         self.DModel = DiscontinuousModel(x, y, kernel, labelFunc)
+        self.BFmode = mode
     #
     
     def train(self, num_restarts=10):
@@ -304,6 +306,8 @@ class GPRDDAnalysis():
     
     def summary(self, mode='BIC', b=0.0):
         if self.summary_object is None:
+            if mode is None:
+                mode = self.BFmode
             summ = dict()
             summ['logbayesfactor'] = self.get_log_Bayes_factor(mode)
             pmc, pmd = self.get_posterior_model_probabilities(mode)
@@ -346,12 +350,9 @@ class GPRDDAnalysis():
         return self.summary_object
     
     #
-    def plot(self, x_test, b=0.0, plotEffectSize=False, mode='BIC'):   
-        
-        summary = self.summary(mode=mode, b=b)
-        
-        pmc, pmd = summary['pmp']['pmc'], summary['pmp']['pmd']
-        
+    def plot(self, x_test, b=0.0, plotEffectSize=False, mode='BIC'):           
+        summary = self.summary(mode=mode, b=b)        
+        pmc, pmd = summary['pmp']['pmc'], summary['pmp']['pmd']        
         LBF = summary['logbayesfactor']
                 
         if self.ndim == 1:
@@ -388,13 +389,10 @@ class GPRDDAnalysis():
             
             if plotEffectSize:  
                 # create ES plot                
-                xmin, xmax = summary['es_interval']
-                
+                xmin, xmax = summary['es_interval']                
                 n = 100
                 xrange = np.linspace(xmin, xmax, n)
                 y = summary['es_Disc']
-                
-                
                 pval = summary['pval']
                 d_bma = summary['es_BMA']
                 ax3.plot(xrange, y, c='firebrick', label=r'$M_D$', linewidth=2.0, linestyle='--')
@@ -440,7 +438,10 @@ class GPRDDAnalysis():
             return fig, (ax1, ax2)
         else:
             raise('Dimensionality not implemented')
-                
+    
+    def __str__(self):
+        # for print
+        pass
 
 # TODO: add hyperparameter priors in a generic way to each kernel
         
